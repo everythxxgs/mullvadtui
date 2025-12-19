@@ -5,6 +5,10 @@ edition = "2021"
 description = "A TUI for managing Mullvad WireGuard VPN connections on Linux"
 license = "GPL-2.0"
 
+[[bin]]
+name = "mvtui"
+path = "src/main.rs"
+
 [dependencies]
 ratatui = "0.29"
 crossterm = "0.28"

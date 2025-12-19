@@ -10,6 +10,82 @@ pub enum ConnectionStatus {
     Disconnected,
 }
 
+/// Check if a server is enabled for auto-start
+pub fn is_enabled(code: &str) -> bool {
+    let output = Command::new("systemctl")
+        .args(["is-enabled", &format!("wg-quick@{}", code)])
+        .output();
+
+    match output {
+        Ok(o) => o.status.success(),
+        Err(_) => false,
+    }
+}
+
+/// Get the currently enabled server (if any)
+pub fn get_enabled_server() -> Option<String> {
+    // List all wg-quick services and find enabled ones
+    let output = Command::new("systemctl")
+        .args(["list-unit-files", "wg-quick@*.service", "--no-legend"])
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 2 && parts[1] == "enabled" {
+            // Extract server code from "wg-quick@se-mma-wg-001.service"
+            if let Some(service) = parts[0].strip_prefix("wg-quick@") {
+                if let Some(code) = service.strip_suffix(".service") {
+                    if code.contains("-wg-") {
+                        return Some(code.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Enable a server for auto-start on boot
+pub fn enable_autostart(code: &str) -> Result<()> {
+    // First disable any currently enabled Mullvad server
+    if let Some(current) = get_enabled_server() {
+        if current != code {
+            let _ = Command::new("systemctl")
+                .args(["disable", &format!("wg-quick@{}", current)])
+                .output();
+        }
+    }
+
+    let output = Command::new("systemctl")
+        .args(["enable", &format!("wg-quick@{}", code)])
+        .output()
+        .context("Failed to run systemctl enable")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("Failed to enable service: {}", stderr);
+    }
+
+    Ok(())
+}
+
+/// Disable auto-start for a server
+pub fn disable_autostart(code: &str) -> Result<()> {
+    let output = Command::new("systemctl")
+        .args(["disable", &format!("wg-quick@{}", code)])
+        .output()
+        .context("Failed to run systemctl disable")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("Failed to disable service: {}", stderr);
+    }
+
+    Ok(())
+}
+
 /// Connect to a WireGuard server using wg-quick
 pub fn connect(code: &str) -> Result<()> {
     // Check if config exists

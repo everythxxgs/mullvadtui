@@ -106,6 +106,9 @@ async fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Char('i') => {
                             app.enter_setup();
                         }
+                        KeyCode::Char('e') => {
+                            app.toggle_autostart();
+                        }
                         KeyCode::Char('s') => {
                             app.update_status();
                         }

@@ -124,6 +124,7 @@ fn draw_list_view(frame: &mut Frame, app: &App, area: Rect) {
                     let has_config = config::config_exists(&server.code);
                     let connected = matches!(&app.connection_status,
                         ConnectionStatus::Connected(c) if c == &server.code);
+                    let is_autostart = app.autostart_server.as_ref() == Some(&server.code);
 
                     let status_indicator = if connected {
                         Span::styled(" [CONNECTED] ", Style::default().fg(Color::Green))
@@ -133,12 +134,19 @@ fn draw_list_view(frame: &mut Frame, app: &App, area: Rect) {
                         Span::styled(" [NO CONFIG] ", Style::default().fg(Color::Yellow))
                     };
 
+                    let autostart_indicator = if is_autostart {
+                        Span::styled("[AUTOSTART] ", Style::default().fg(Color::Magenta))
+                    } else {
+                        Span::raw("")
+                    };
+
                     ListItem::new(Line::from(vec![
                         Span::styled(
                             format!("{:<20}", server.code),
                             Style::default().fg(Color::White),
                         ),
                         status_indicator,
+                        autostart_indicator,
                         Span::styled(
                             format!(" {}", server.ipv4_addr),
                             Style::default().fg(Color::DarkGray),
@@ -223,8 +231,11 @@ fn draw_help_bar(frame: &mut Frame, app: &App, area: Rect) {
         (View::Countries, _) => {
             " ↑/↓: Navigate | Enter: Select | r: Refresh | i: Setup | d: Disconnect | q: Quit "
         }
-        (View::Cities, _) | (View::Servers, _) => {
-            " ↑/↓: Navigate | Enter: Select/Connect | Esc: Back | d: Disconnect | q: Quit "
+        (View::Cities, _) => {
+            " ↑/↓: Navigate | Enter: Select | Esc: Back | d: Disconnect | q: Quit "
+        }
+        (View::Servers, _) => {
+            " ↑/↓: Navigate | Enter: Connect | e: Toggle Autostart | Esc: Back | d: Disconnect | q: Quit "
         }
         _ => "",
     };

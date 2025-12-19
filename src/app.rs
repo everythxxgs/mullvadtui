@@ -49,6 +49,9 @@ pub struct App {
     // Connection status
     pub connection_status: ConnectionStatus,
 
+    // Autostart server (enabled for systemd)
+    pub autostart_server: Option<String>,
+
     // Messages
     pub message: Option<String>,
     pub error: Option<String>,
@@ -84,6 +87,8 @@ impl App {
 
             connection_status: ConnectionStatus::Disconnected,
 
+            autostart_server: None,
+
             message: None,
             error: None,
 
@@ -105,6 +110,9 @@ impl App {
 
         // Check connection status
         self.connection_status = wireguard::get_status();
+
+        // Check which server is enabled for autostart
+        self.autostart_server = wireguard::get_enabled_server();
 
         // Try to find existing private key
         self.private_key = config::find_existing_private_key()?;
@@ -379,6 +387,46 @@ impl App {
             View::Cities => self.selected_city_idx,
             View::Servers => self.selected_server_idx,
             View::Setup => 0,
+        }
+    }
+
+    /// Toggle autostart for the currently selected server
+    pub fn toggle_autostart(&mut self) {
+        if self.view != View::Servers {
+            return;
+        }
+
+        if let Some(server) = self.city_servers.get(self.selected_server_idx) {
+            let code = server.code.clone();
+
+            // Check if this server is already enabled
+            let is_currently_enabled = self.autostart_server.as_ref() == Some(&code);
+
+            if is_currently_enabled {
+                // Disable it
+                match wireguard::disable_autostart(&code) {
+                    Ok(()) => {
+                        self.autostart_server = None;
+                        self.message = Some(format!("Disabled autostart for {}", code));
+                        self.error = None;
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to disable autostart: {}", e));
+                    }
+                }
+            } else {
+                // Enable it (will disable any other)
+                match wireguard::enable_autostart(&code) {
+                    Ok(()) => {
+                        self.autostart_server = Some(code.clone());
+                        self.message = Some(format!("Enabled autostart for {}", code));
+                        self.error = None;
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to enable autostart: {}", e));
+                    }
+                }
+            }
         }
     }
 }
