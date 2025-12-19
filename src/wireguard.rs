@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+const MULLVAD_DNS: &str = "10.64.0.1";
+
 /// Connection status
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConnectionStatus {
@@ -32,6 +34,8 @@ pub fn connect(code: &str) -> Result<()> {
             // Retry connection
             let retry_output = try_wg_quick_up(code)?;
             if retry_output.status.success() {
+                // Configure DNS leak prevention
+                configure_dns_leak_prevention(code);
                 return Ok(());
             }
 
@@ -57,7 +61,44 @@ pub fn connect(code: &str) -> Result<()> {
         anyhow::bail!("wg-quick up failed:\n{}", combined.trim());
     }
 
+    // Configure DNS leak prevention
+    configure_dns_leak_prevention(code);
+
     Ok(())
+}
+
+/// Configure DNS to prevent leaks
+fn configure_dns_leak_prevention(interface: &str) {
+    // Set DNS for the WireGuard interface
+    let _ = Command::new("resolvectl")
+        .args(["dns", interface, MULLVAD_DNS])
+        .output();
+
+    // Set this interface as the default route for DNS (~. means all domains)
+    let _ = Command::new("resolvectl")
+        .args(["domain", interface, "~."])
+        .output();
+
+    // Flush DNS cache
+    let _ = Command::new("resolvectl")
+        .arg("flush-caches")
+        .output();
+
+    // Block DNS on other interfaces with iptables (IPv4)
+    let _ = Command::new("iptables")
+        .args(["-I", "OUTPUT", "!", "-o", interface, "-p", "udp", "--dport", "53", "-j", "REJECT"])
+        .output();
+    let _ = Command::new("iptables")
+        .args(["-I", "OUTPUT", "!", "-o", interface, "-p", "tcp", "--dport", "53", "-j", "REJECT"])
+        .output();
+
+    // Block DNS on other interfaces with iptables (IPv6)
+    let _ = Command::new("ip6tables")
+        .args(["-I", "OUTPUT", "!", "-o", interface, "-p", "udp", "--dport", "53", "-j", "REJECT"])
+        .output();
+    let _ = Command::new("ip6tables")
+        .args(["-I", "OUTPUT", "!", "-o", interface, "-p", "tcp", "--dport", "53", "-j", "REJECT"])
+        .output();
 }
 
 fn try_wg_quick_up(code: &str) -> Result<std::process::Output> {
@@ -69,6 +110,9 @@ fn try_wg_quick_up(code: &str) -> Result<std::process::Output> {
 
 /// Disconnect from a WireGuard server using wg-quick
 pub fn disconnect(code: &str) -> Result<()> {
+    // Clean up DNS leak prevention rules first
+    cleanup_dns_leak_prevention(code);
+
     let output = Command::new("wg-quick")
         .args(["down", code])
         .output()
@@ -79,7 +123,29 @@ pub fn disconnect(code: &str) -> Result<()> {
         anyhow::bail!("wg-quick down failed: {}", stderr);
     }
 
+    // Flush DNS cache after disconnect
+    let _ = Command::new("resolvectl").arg("flush-caches").output();
+
     Ok(())
+}
+
+/// Clean up DNS leak prevention iptables rules
+fn cleanup_dns_leak_prevention(interface: &str) {
+    // Remove iptables rules (IPv4)
+    let _ = Command::new("iptables")
+        .args(["-D", "OUTPUT", "!", "-o", interface, "-p", "udp", "--dport", "53", "-j", "REJECT"])
+        .output();
+    let _ = Command::new("iptables")
+        .args(["-D", "OUTPUT", "!", "-o", interface, "-p", "tcp", "--dport", "53", "-j", "REJECT"])
+        .output();
+
+    // Remove iptables rules (IPv6)
+    let _ = Command::new("ip6tables")
+        .args(["-D", "OUTPUT", "!", "-o", interface, "-p", "udp", "--dport", "53", "-j", "REJECT"])
+        .output();
+    let _ = Command::new("ip6tables")
+        .args(["-D", "OUTPUT", "!", "-o", interface, "-p", "tcp", "--dport", "53", "-j", "REJECT"])
+        .output();
 }
 
 /// Get current connection status by checking active interfaces
